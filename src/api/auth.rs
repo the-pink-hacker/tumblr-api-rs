@@ -1,21 +1,46 @@
-use std::{
-    error::Error,
-    fs,
-    io::{self, BufRead, BufReader, Write},
-    net::TcpListener,
-};
+use std::{fs, io};
 
 use oauth2::{
     basic::BasicClient, reqwest::http_client, AuthUrl, AuthorizationCode, ClientId, ClientSecret,
     CsrfToken, PkceCodeChallenge, RedirectUrl, StandardRevocableToken, TokenResponse, TokenUrl,
 };
-use reqwest::Url;
 use serde::Deserialize;
+use snafu::prelude::*;
+use tokio::{
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    net::TcpListener,
+};
 
 const CREDENTIALS_PATH: &str = "credentials.json";
 const REDIRECT_URL: &str = "http://localhost:8080/";
 const AUTHORIZE_URL: &str = "https://www.tumblr.com/oauth2/authorize";
 const TOKEN_URL: &str = "https://api.tumblr.com/v2/oauth2/token";
+
+#[derive(Debug, Snafu)]
+pub enum Error {
+    #[snafu(display("Failed to load credential json file. {}", source))]
+    CredentialFileParse {
+        source: io::Error,
+    },
+    #[snafu(display(
+        "Tumblr's state doesn't not match. Expected: '{}', Received: '{}'.",
+        expected,
+        result
+    ))]
+    StateDoNotMatch {
+        expected: String,
+        result: String,
+    },
+    #[snafu(display("URL can't be parsed."))]
+    UrlParse,
+    #[snafu(display("URL arguments can't be parsed. {}", source))]
+    UrlArgumentsParse {
+        source: serde_urlencoded::de::Error,
+    },
+    RedirectServer {
+        source: io::Error,
+    },
+}
 
 #[derive(Deserialize)]
 struct ConsumerCredentials {
@@ -28,15 +53,23 @@ fn read_credentials() -> io::Result<ConsumerCredentials> {
     Ok(serde_json::from_str(&file_contents)?)
 }
 
-pub async fn authorize() -> Result<(), Box<dyn Error>> {
-    let credentials = read_credentials()?;
+#[derive(Debug, Deserialize)]
+struct RedirectUrlArguments {
+    pub code: String,
+    pub state: String,
+}
+
+pub async fn authorize() -> Result<(), Error> {
+    let credentials = read_credentials().context(CredentialFileParseSnafu)?;
     let client = BasicClient::new(
         ClientId::new(credentials.consumer_key),
         Some(ClientSecret::new(credentials.consumer_secret)),
-        AuthUrl::new(AUTHORIZE_URL.to_string())?,
-        Some(TokenUrl::new(TOKEN_URL.to_string())?),
+        AuthUrl::new(AUTHORIZE_URL.to_string()).expect("Auth URL failed to be created."),
+        Some(TokenUrl::new(TOKEN_URL.to_string()).expect("Token URL failed to be created.")),
     )
-    .set_redirect_uri(RedirectUrl::new(REDIRECT_URL.to_string())?);
+    .set_redirect_uri(
+        RedirectUrl::new(REDIRECT_URL.to_string()).expect("Redirect URL failed to be created."),
+    );
 
     let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
 
@@ -47,44 +80,37 @@ pub async fn authorize() -> Result<(), Box<dyn Error>> {
 
     println!("Browse to: {}", auth_url);
 
-    // A very naive implementation of the redirect server.
-    let listener = TcpListener::bind("127.0.0.1:8080").unwrap();
-    for stream in listener.incoming() {
-        if let Ok(mut stream) = stream {
+    // Redirect server
+    let listener = TcpListener::bind("127.0.0.1:8080")
+        .await
+        .context(RedirectServerSnafu)?;
+    loop {
+        if let Ok((stream, _)) = listener.accept().await {
             let code;
             let state;
+            let mut buffer;
             {
-                let mut reader = BufReader::new(&stream);
+                buffer = BufReader::new(stream);
 
                 let mut request_line = String::new();
-                reader.read_line(&mut request_line).unwrap();
+                buffer
+                    .read_line(&mut request_line)
+                    .await
+                    .context(RedirectServerSnafu)?;
 
-                let redirect_url = request_line.split_whitespace().nth(1).unwrap();
-                let url = Url::parse(&(REDIRECT_URL.to_string() + redirect_url)).unwrap();
+                let redirect_url = serde_urlencoded::from_str::<RedirectUrlArguments>(
+                    request_line
+                        .split_whitespace()
+                        .nth(1)
+                        .context(UrlParseSnafu)?
+                        .split('?')
+                        .nth(1)
+                        .context(UrlParseSnafu)?,
+                )
+                .context(UrlArgumentsParseSnafu)?;
 
-                // Parse url for code
-                let code_pair = url
-                    .query_pairs()
-                    .find(|pair| {
-                        let &(ref key, _) = pair;
-                        key == "code"
-                    })
-                    .unwrap();
-
-                let (_, value) = code_pair;
-                code = AuthorizationCode::new(value.into_owned());
-
-                // Parse url for state
-                let state_pair = url
-                    .query_pairs()
-                    .find(|pair| {
-                        let &(ref key, _) = pair;
-                        key == "state"
-                    })
-                    .unwrap();
-
-                let (_, value) = state_pair;
-                state = CsrfToken::new(value.into_owned());
+                code = AuthorizationCode::new(redirect_url.code);
+                state = CsrfToken::new(redirect_url.state);
             }
 
             let message = "Go back to your terminal :)";
@@ -93,15 +119,19 @@ pub async fn authorize() -> Result<(), Box<dyn Error>> {
                 message.len(),
                 message
             );
-            stream.write_all(response.as_bytes()).unwrap();
+
+            buffer
+                .write_all(response.as_bytes())
+                .await
+                .context(RedirectServerSnafu)?;
 
             println!("Tumblr returned the following code:\n{}\n", code.secret());
-            assert_eq!(
-                csrf_token.secret(),
-                state.secret(),
-                "Tumblr's state doesn't not match. Expected: {}, Received: {}",
-                csrf_token.secret(),
-                state.secret(),
+            ensure!(
+                csrf_token.secret() == state.secret(),
+                StateDoNotMatchSnafu {
+                    expected: csrf_token.secret(),
+                    result: state.secret()
+                }
             );
 
             // Exchange the code with a token.
@@ -116,7 +146,7 @@ pub async fn authorize() -> Result<(), Box<dyn Error>> {
             );
 
             // Revoke the obtained token
-            let token_response = token_response.unwrap();
+            let token_response = token_response.expect("Failed to get token.");
             let token_to_revoke: StandardRevocableToken = match token_response.refresh_token() {
                 Some(token) => token.into(),
                 None => token_response.access_token().into(),
