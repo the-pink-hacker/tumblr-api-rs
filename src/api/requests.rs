@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 
-use reqwest::{RequestBuilder, Url};
+use reqwest::{header::CONTENT_TYPE, RequestBuilder, Url};
 
 use super::TumblrClient;
+
+type DynResult<T> = Result<T, Box<dyn std::error::Error>>;
 
 /// The API uses three different levels of authentication, depending on the method.
 ///
@@ -11,43 +13,43 @@ use super::TumblrClient;
 /// `API key`: Requires an API key. Use your OAuth Consumer Key as your api_key.
 ///
 /// `OAuth`: Requires a signed request that meets the OAuth 1.0a Protocol.
+#[derive(Debug)]
 pub enum AuthenticationLevel {
     None,
     Key,
     OAuth,
 }
 
+#[derive(Debug)]
+pub enum HttpMethod {
+    Get,
+    Post,
+    Delete,
+}
+
 impl TumblrClient {
-    pub async fn get_request(
+    pub async fn request(
         &mut self,
-        level: AuthenticationLevel,
+        method: HttpMethod,
         url: Url,
-        form: Option<HashMap<String, String>>,
-    ) -> Result<String, Box<dyn std::error::Error>> {
+        level: AuthenticationLevel,
+        json: Option<String>,
+    ) -> DynResult<String> {
         // Refresh token if expired
         self.refresh_if_expired().await?;
 
-        let form = form.unwrap_or_default();
-        let builder = self.request_client.get(url).form(&form);
+        let mut builder = match method {
+            HttpMethod::Get => self.request_client.get(url),
+            HttpMethod::Post => self.request_client.post(url),
+            HttpMethod::Delete => self.request_client.delete(url),
+        };
 
-        Ok(match level {
-            AuthenticationLevel::None => builder.send().await?.text().await?,
-            AuthenticationLevel::Key => self.request_with_key(builder).await?,
-            AuthenticationLevel::OAuth => self.request_with_oauth(builder).await?,
-        })
-    }
-
-    pub async fn post_request(
-        &mut self,
-        level: AuthenticationLevel,
-        url: Url,
-        form: Option<HashMap<String, String>>,
-    ) -> Result<String, Box<dyn std::error::Error>> {
-        // Refresh token if expired
-        self.refresh_if_expired().await?;
-
-        let form = form.unwrap_or_default();
-        let builder = self.request_client.post(url).form(&form);
+        if let Some(json) = json {
+            builder = builder
+                .form(&HashMap::<String, String>::new())
+                .header(CONTENT_TYPE, "application/json")
+                .body(json);
+        }
 
         Ok(match level {
             AuthenticationLevel::None => builder.send().await?.text().await?,
