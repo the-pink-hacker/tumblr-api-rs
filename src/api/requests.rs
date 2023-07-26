@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use reqwest::Url;
+use reqwest::{RequestBuilder, Url};
 
 use super::TumblrClient;
 
@@ -18,51 +18,56 @@ pub enum AuthenticationLevel {
 }
 
 impl TumblrClient {
-    pub async fn get(
+    pub async fn get_request(
         &mut self,
         level: AuthenticationLevel,
         url: Url,
         form: Option<HashMap<String, String>>,
     ) -> Result<String, Box<dyn std::error::Error>> {
         // Refresh token if expired
-
         self.refresh_if_expired().await?;
 
-        let form = &form.unwrap_or_default();
+        let form = form.unwrap_or_default();
+        let builder = self.request_client.get(url).form(&form);
 
         Ok(match level {
-            AuthenticationLevel::None => self.get_none(url, form).await?,
-            AuthenticationLevel::Key => self.get_key(url, form).await?,
-            AuthenticationLevel::OAuth => self.get_oauth(url, form).await?,
+            AuthenticationLevel::None => builder.send().await?.text().await?,
+            AuthenticationLevel::Key => self.request_with_key(builder).await?,
+            AuthenticationLevel::OAuth => self.request_with_oauth(builder).await?,
         })
     }
 
-    async fn get_none(&self, url: Url, form: &HashMap<String, String>) -> reqwest::Result<String> {
-        self.request_client
-            .get(url)
-            .form(form)
-            .send()
-            .await?
-            .text()
-            .await
+    pub async fn post_request(
+        &mut self,
+        level: AuthenticationLevel,
+        url: Url,
+        form: Option<HashMap<String, String>>,
+    ) -> Result<String, Box<dyn std::error::Error>> {
+        // Refresh token if expired
+        self.refresh_if_expired().await?;
+
+        let form = form.unwrap_or_default();
+        let builder = self.request_client.post(url).form(&form);
+
+        Ok(match level {
+            AuthenticationLevel::None => builder.send().await?.text().await?,
+            AuthenticationLevel::Key => self.request_with_key(builder).await?,
+            AuthenticationLevel::OAuth => self.request_with_oauth(builder).await?,
+        })
     }
 
-    async fn get_key(&self, url: Url, form: &HashMap<String, String>) -> reqwest::Result<String> {
-        self.request_client
-            .get(url)
+    async fn request_with_key(&self, builder: RequestBuilder) -> reqwest::Result<String> {
+        builder
             .query(&[("api_key", self.get_api_key())])
-            .form(form)
             .send()
             .await?
             .text()
             .await
     }
 
-    async fn get_oauth(&self, url: Url, form: &HashMap<String, String>) -> reqwest::Result<String> {
-        self.request_client
-            .get(url)
+    async fn request_with_oauth(&self, builder: RequestBuilder) -> reqwest::Result<String> {
+        builder
             .bearer_auth(self.get_access_token().secret())
-            .form(&form)
             .send()
             .await?
             .text()
