@@ -1,24 +1,16 @@
+mod content;
+
 use reqwest::Url;
 use serde::Serialize;
 use serde_with_macros::skip_serializing_none;
 
+pub use self::content::*;
+
 use super::requests::{AuthenticationLevel, HttpMethod, TumblrRequest};
 
-#[skip_serializing_none]
-#[derive(Debug, Serialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum PostContent {
-    Text {
-        text: String,
-        subtype: Option<String>,
-        indent_level: Option<u8>,
-    },
-}
-
 /// https://www.tumblr.com/docs/en/api/v2#note-about-post-states
-#[skip_serializing_none]
 #[derive(Debug, Default, Serialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "kebab-case")]
 pub enum PostState {
     #[default]
     Published,
@@ -28,9 +20,8 @@ pub enum PostState {
     Unapproved,
 }
 
-#[skip_serializing_none]
 #[derive(Debug, Default, Serialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "kebab-case")]
 pub enum ReblogInteractability {
     #[default]
     Everyone,
