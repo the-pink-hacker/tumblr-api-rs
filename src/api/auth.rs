@@ -7,7 +7,7 @@ use std::{
 use chrono::{prelude::*, OutOfRangeError};
 use oauth2::{
     basic::{BasicClient, BasicErrorResponseType, BasicTokenType},
-    reqwest::http_client,
+    reqwest::async_http_client,
     AccessToken, AuthUrl, AuthorizationCode, Client, ClientId, ClientSecret, CsrfToken,
     EmptyExtraTokenFields, PkceCodeChallenge, RedirectUrl, RefreshToken, RequestTokenError,
     RevocationErrorResponseType, Scope, StandardErrorResponse, StandardRevocableToken,
@@ -151,7 +151,11 @@ impl TumblrClientTokens {
 
         let (auth_url, csrf_token) = client
             .authorize_url(CsrfToken::new_random)
-            .add_scope(Scope::new("offline_access".to_string()))
+            .add_scopes([
+                Scope::new("offline_access".to_string()),
+                Scope::new("basic".to_string()),
+                Scope::new("write".to_string()),
+            ])
             .set_pkce_challenge(pkce_challenge)
             .url();
 
@@ -173,7 +177,8 @@ impl TumblrClientTokens {
         client
             .exchange_code(code)
             .set_pkce_verifier(pkce_verifier)
-            .request(http_client)
+            .request_async(async_http_client)
+            .await
             .context(AccessTokenSnafu)?
             .try_into()
     }
@@ -199,14 +204,15 @@ impl TumblrClientTokens {
             .context(SaveClientCacheFileSnafu)
     }
 
-    fn refresh_token(&mut self, client: OauthClient) -> Result<()> {
+    async fn refresh_token(&mut self, client: &OauthClient) -> Result<()> {
         let refresh_token = self
             .refresh_token
             .as_ref()
             .expect("Refresh token no present.");
         let response = client
             .exchange_refresh_token(&refresh_token)
-            .request(http_client)
+            .request_async(async_http_client)
+            .await
             .context(AccessTokenSnafu)?;
         self.load_response(response)
     }
@@ -219,7 +225,16 @@ impl TumblrClientTokens {
     }
 
     fn needs_refresh(&self) -> bool {
-        self.refresh_at >= Utc::now()
+        self.refresh_at <= Utc::now()
+    }
+
+    async fn refresh_if_expired(&mut self, client: &OauthClient) -> Result<()> {
+        if self.needs_refresh() {
+            println!("Refreshing token.");
+            self.refresh_token(client).await
+        } else {
+            Ok(())
+        }
     }
 
     fn load_response(&mut self, response: TumblrTokenResponse) -> Result<()> {
@@ -245,38 +260,62 @@ impl TryFrom<TumblrTokenResponse> for TumblrClientTokens {
 #[derive(Debug)]
 pub struct TumblrClient {
     token: TumblrClientTokens,
-    client: OauthClient,
+    pub client: OauthClient,
+    pub request_client: reqwest::Client,
 }
 
 impl TumblrClient {
-    pub async fn authorize(credentials: ConsumerCredentials) -> Result<Self> {
+    pub async fn authorize(
+        credentials: ConsumerCredentials,
+        request_client: reqwest::Client,
+    ) -> Result<Self> {
         let client = Self::create_oauth_client(credentials);
         Ok(Self {
             token: TumblrClientTokens::authorize(&client).await?,
             client,
+            request_client,
         })
     }
 
-    pub fn from_file(path: PathBuf, credentials: ConsumerCredentials) -> Result<Self> {
+    pub fn from_file(
+        path: PathBuf,
+        credentials: ConsumerCredentials,
+        request_client: reqwest::Client,
+    ) -> Result<Self> {
         Ok(Self {
             token: TumblrClientTokens::from_file(path)?,
             client: Self::create_oauth_client(credentials),
+            request_client,
         })
     }
 
     pub async fn try_from_file_or_authorize(
         path: PathBuf,
         credentials: ConsumerCredentials,
+        request_client: reqwest::Client,
     ) -> Result<Self> {
         let client = Self::create_oauth_client(credentials);
         Ok(Self {
             token: TumblrClientTokens::try_from_file_or_authorize(path, &client).await?,
             client,
+            request_client,
         })
     }
 
     pub fn save_to_file(&self, path: PathBuf) -> Result<()> {
         self.token.save_to_file(path)
+    }
+
+    pub async fn refresh_if_expired(&mut self) -> Result<()> {
+        self.token.refresh_if_expired(&self.client).await
+    }
+
+    pub fn get_api_key(&self) -> &ClientId {
+        self.client.client_id()
+    }
+
+    pub fn get_access_token(&self) -> &AccessToken {
+        &self.token.access_token
     }
 
     fn create_oauth_client(credentials: ConsumerCredentials) -> OauthClient {
