@@ -1,12 +1,17 @@
-use std::{fs, io, time::Duration};
+use std::{
+    fs::{self, File},
+    io::{self, Write},
+    path::PathBuf,
+};
 
+use chrono::{prelude::*, OutOfRangeError};
 use oauth2::{
     basic::{BasicClient, BasicErrorResponseType, BasicTokenType},
     reqwest::http_client,
     AccessToken, AuthUrl, AuthorizationCode, Client, ClientId, ClientSecret, CsrfToken,
     EmptyExtraTokenFields, PkceCodeChallenge, RedirectUrl, RefreshToken, RequestTokenError,
     RevocationErrorResponseType, Scope, StandardErrorResponse, StandardRevocableToken,
-    StandardTokenIntrospectionResponse, StandardTokenResponse, TokenUrl,
+    StandardTokenIntrospectionResponse, StandardTokenResponse, TokenResponse, TokenUrl,
 };
 use serde::{Deserialize, Serialize};
 use snafu::prelude::*;
@@ -20,14 +25,18 @@ const REDIRECT_URL: &str = "http://localhost:8080/";
 const AUTHORIZE_URL: &str = "https://www.tumblr.com/oauth2/authorize";
 const TOKEN_URL: &str = "https://api.tumblr.com/v2/oauth2/token";
 
+type TumblrTokenResponse = StandardTokenResponse<EmptyExtraTokenFields, BasicTokenType>;
+
 type OauthClient = Client<
     StandardErrorResponse<BasicErrorResponseType>,
-    StandardTokenResponse<EmptyExtraTokenFields, BasicTokenType>,
+    TumblrTokenResponse,
     BasicTokenType,
     StandardTokenIntrospectionResponse<EmptyExtraTokenFields, BasicTokenType>,
     StandardRevocableToken,
     StandardErrorResponse<RevocationErrorResponseType>,
 >;
+
+type Result<T> = core::result::Result<T, Error>;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
@@ -50,10 +59,20 @@ pub enum Error {
     },
     #[snafu(display("No refresh token was present."))]
     NoRefreshToken,
+    #[snafu(display("Expire duration is too big: {}", source))]
+    ExpireDurationTooBig { source: OutOfRangeError },
+    #[snafu(display("Failed to load client cache file: {}", source))]
+    LoadClientCacheFile { source: io::Error },
+    #[snafu(display("Failed to save client cache file: {}", source))]
+    SaveClientCacheFile { source: io::Error },
+    #[snafu(display("Failed to deserialize client cache file: {}", source))]
+    DeserializeClientCacheFile { source: serde_json::Error },
+    #[snafu(display("Failed to serialize client cache file: {}", source))]
+    SerializeClientCacheFile { source: serde_json::Error },
 }
 
 #[derive(Deserialize)]
-struct ConsumerCredentials {
+pub struct ConsumerCredentials {
     pub consumer_key: String,
     pub consumer_secret: String,
 }
@@ -63,7 +82,7 @@ pub fn read_credentials() -> io::Result<ConsumerCredentials> {
     Ok(serde_json::from_str(&file_contents)?)
 }
 
-async fn listen_for_code() -> Result<(AuthorizationCode, CsrfToken), Error> {
+async fn listen_for_code() -> Result<(AuthorizationCode, CsrfToken)> {
     let listener = TcpListener::bind("127.0.0.1:8080")
         .await
         .context(RedirectServerSnafu)?;
@@ -122,34 +141,142 @@ struct RedirectUrlArguments {
 #[derive(Debug, Serialize, Deserialize)]
 struct TumblrClientTokens {
     access_token: AccessToken,
-    expires_in: Duration,
-    last_refreshed: u64,
+    refresh_at: DateTime<Utc>,
     refresh_token: Option<RefreshToken>,
 }
 
 impl TumblrClientTokens {
-    fn refresh_token(&mut self, client: OauthClient) -> Result<(), Error> {
-        let refresh_token = self.refresh_token.expect("Refresh token no present.");
-        let refresh_response = client
+    async fn authorize(client: &OauthClient) -> Result<Self> {
+        let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
+
+        let (auth_url, csrf_token) = client
+            .authorize_url(CsrfToken::new_random)
+            .add_scope(Scope::new("offline_access".to_string()))
+            .set_pkce_challenge(pkce_challenge)
+            .url();
+
+        println!("Browse to: {}", auth_url);
+
+        // Redirect server
+        let (code, state) = listen_for_code().await?;
+
+        // The state received from Tumblr, should match what we sent
+        ensure!(
+            csrf_token.secret() == state.secret(),
+            StateDoNotMatchSnafu {
+                expected: csrf_token.secret(),
+                result: state.secret()
+            }
+        );
+
+        // Exchange the code with a token.
+        client
+            .exchange_code(code)
+            .set_pkce_verifier(pkce_verifier)
+            .request(http_client)
+            .context(AccessTokenSnafu)?
+            .try_into()
+    }
+
+    fn from_file(path: PathBuf) -> Result<Self> {
+        let contents = fs::read_to_string(path).context(LoadClientCacheFileSnafu)?;
+        serde_json::from_str(&contents).context(DeserializeClientCacheFileSnafu)
+    }
+
+    async fn try_from_file_or_authorize(path: PathBuf, client: &OauthClient) -> Result<Self> {
+        if let Ok(cached) = Self::from_file(path) {
+            println!("Client cached. Loading from file.");
+            Ok(cached)
+        } else {
+            Self::authorize(client).await
+        }
+    }
+
+    fn save_to_file(&self, path: PathBuf) -> Result<()> {
+        let mut file = File::create(path).context(SaveClientCacheFileSnafu)?;
+        let contents = serde_json::to_string_pretty(self).context(SerializeClientCacheFileSnafu)?;
+        file.write_all(contents.as_bytes())
+            .context(SaveClientCacheFileSnafu)
+    }
+
+    fn refresh_token(&mut self, client: OauthClient) -> Result<()> {
+        let refresh_token = self
+            .refresh_token
+            .as_ref()
+            .expect("Refresh token no present.");
+        let response = client
             .exchange_refresh_token(&refresh_token)
             .request(http_client)
             .context(AccessTokenSnafu)?;
+        self.load_response(response)
+    }
+
+    /// Takes `expires_in` and adds it to the current time.
+    fn calculate_refresh_at(expires_in: Option<std::time::Duration>) -> Result<DateTime<Utc>> {
+        let expires_in = chrono::Duration::from_std(expires_in.context(NoRefreshTokenSnafu)?)
+            .context(ExpireDurationTooBigSnafu)?;
+        Ok(Utc::now() + expires_in)
+    }
+
+    fn needs_refresh(&self) -> bool {
+        self.refresh_at >= Utc::now()
+    }
+
+    fn load_response(&mut self, response: TumblrTokenResponse) -> Result<()> {
+        self.access_token = response.access_token().clone();
+        self.refresh_at = Self::calculate_refresh_at(response.expires_in())?;
+        self.refresh_token = response.refresh_token().cloned();
         Ok(())
+    }
+}
+
+impl TryFrom<TumblrTokenResponse> for TumblrClientTokens {
+    type Error = Error;
+
+    fn try_from(value: TumblrTokenResponse) -> core::result::Result<Self, Self::Error> {
+        Ok(Self {
+            access_token: value.access_token().clone(),
+            refresh_at: Self::calculate_refresh_at(value.expires_in())?,
+            refresh_token: value.refresh_token().cloned(),
+        })
     }
 }
 
 #[derive(Debug)]
 pub struct TumblrClient {
-    token: Option<TumblrClientTokens>,
+    token: TumblrClientTokens,
     client: OauthClient,
 }
 
 impl TumblrClient {
-    pub fn new(credentials: ConsumerCredentials) -> Self {
-        Self {
-            token: None,
+    pub async fn authorize(credentials: ConsumerCredentials) -> Result<Self> {
+        let client = Self::create_oauth_client(credentials);
+        Ok(Self {
+            token: TumblrClientTokens::authorize(&client).await?,
+            client,
+        })
+    }
+
+    pub fn from_file(path: PathBuf, credentials: ConsumerCredentials) -> Result<Self> {
+        Ok(Self {
+            token: TumblrClientTokens::from_file(path)?,
             client: Self::create_oauth_client(credentials),
-        }
+        })
+    }
+
+    pub async fn try_from_file_or_authorize(
+        path: PathBuf,
+        credentials: ConsumerCredentials,
+    ) -> Result<Self> {
+        let client = Self::create_oauth_client(credentials);
+        Ok(Self {
+            token: TumblrClientTokens::try_from_file_or_authorize(path, &client).await?,
+            client,
+        })
+    }
+
+    pub fn save_to_file(&self, path: PathBuf) -> Result<()> {
+        self.token.save_to_file(path)
     }
 
     fn create_oauth_client(credentials: ConsumerCredentials) -> OauthClient {
@@ -162,45 +289,5 @@ impl TumblrClient {
         .set_redirect_uri(
             RedirectUrl::new(REDIRECT_URL.to_string()).expect("Redirect URL failed to be created."),
         )
-    }
-
-    pub async fn authorize(&self) -> Result<(), Error> {
-        let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
-
-        let (auth_url, csrf_token) = self
-            .client
-            .authorize_url(CsrfToken::new_random)
-            .add_scope(Scope::new("offline_access".to_string()))
-            .set_pkce_challenge(pkce_challenge)
-            .url();
-
-        println!("Browse to: {}", auth_url);
-
-        // Redirect server
-        let (code, state) = listen_for_code().await?;
-
-        ensure!(
-            csrf_token.secret() == state.secret(),
-            StateDoNotMatchSnafu {
-                expected: csrf_token.secret(),
-                result: state.secret()
-            }
-        );
-        println!("Tumblr returned the following code:\n{}\n", code.secret());
-
-        // Exchange the code with a token.
-        let token_response = self
-            .client
-            .exchange_code(code)
-            .set_pkce_verifier(pkce_verifier)
-            .request(http_client)
-            .context(AccessTokenSnafu)?;
-
-        println!(
-            "Tumblr returned the following token:\n{:?}\n",
-            token_response
-        );
-
-        Ok(())
     }
 }
