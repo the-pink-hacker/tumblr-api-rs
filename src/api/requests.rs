@@ -27,52 +27,47 @@ pub enum HttpMethod {
     Delete,
 }
 
+#[derive(Debug)]
+pub struct TumblrRequest {
+    pub method: HttpMethod,
+    pub url: Url,
+    pub level: AuthenticationLevel,
+    pub json: Option<String>,
+}
+
 impl TumblrClient {
-    pub async fn request(
-        &mut self,
-        method: HttpMethod,
-        url: Url,
-        level: AuthenticationLevel,
-        json: Option<String>,
-    ) -> DynResult<String> {
+    pub async fn request(&mut self, request: TumblrRequest) -> DynResult<String> {
         // Refresh token if expired
         self.refresh_if_expired().await?;
 
-        let mut builder = match method {
-            HttpMethod::Get => self.request_client.get(url),
-            HttpMethod::Post => self.request_client.post(url),
-            HttpMethod::Delete => self.request_client.delete(url),
+        let mut builder = match request.method {
+            HttpMethod::Get => self.request_client.get(request.url),
+            HttpMethod::Post => self.request_client.post(request.url),
+            HttpMethod::Delete => self.request_client.delete(request.url),
         };
 
-        if let Some(json) = json {
-            builder = builder
-                .form(&HashMap::<String, String>::new())
-                .header(CONTENT_TYPE, "application/json")
-                .body(json);
+        if let Some(json) = request.json {
+            builder = self.request_with_json(builder, json)
         }
 
-        Ok(match level {
-            AuthenticationLevel::None => builder.send().await?.text().await?,
-            AuthenticationLevel::Key => self.request_with_key(builder).await?,
-            AuthenticationLevel::OAuth => self.request_with_oauth(builder).await?,
-        })
+        builder = match request.level {
+            AuthenticationLevel::None => builder,
+            AuthenticationLevel::Key => self.request_with_key(builder),
+            AuthenticationLevel::OAuth => self.request_with_oauth(builder),
+        };
+
+        Ok(builder.send().await?.text().await?)
     }
 
-    async fn request_with_key(&self, builder: RequestBuilder) -> reqwest::Result<String> {
-        builder
-            .query(&[("api_key", self.get_api_key())])
-            .send()
-            .await?
-            .text()
-            .await
+    fn request_with_json(&self, builder: RequestBuilder, json: String) -> RequestBuilder {
+        builder.header(CONTENT_TYPE, "application/json").body(json)
     }
 
-    async fn request_with_oauth(&self, builder: RequestBuilder) -> reqwest::Result<String> {
-        builder
-            .bearer_auth(self.get_access_token().secret())
-            .send()
-            .await?
-            .text()
-            .await
+    fn request_with_key(&self, builder: RequestBuilder) -> RequestBuilder {
+        builder.query(&[("api_key", self.get_api_key())])
+    }
+
+    fn request_with_oauth(&self, builder: RequestBuilder) -> RequestBuilder {
+        builder.bearer_auth(self.get_access_token().secret())
     }
 }
