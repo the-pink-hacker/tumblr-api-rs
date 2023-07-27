@@ -2,7 +2,7 @@ use reqwest::Url;
 use serde::Serialize;
 use serde_with_macros::skip_serializing_none;
 
-use crate::api::blog::BlogMention;
+use crate::blog::BlogMention;
 
 #[derive(Debug, Serialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
