@@ -28,6 +28,16 @@ pub enum HttpMethod {
     Delete,
 }
 
+impl From<HttpMethod> for reqwest::Method {
+    fn from(value: HttpMethod) -> Self {
+        match value {
+            HttpMethod::Get => Self::GET,
+            HttpMethod::Post => Self::POST,
+            HttpMethod::Delete => Self::DELETE,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct TumblrRequest {
     pub method: HttpMethod,
@@ -49,18 +59,13 @@ pub struct TumblrResponse<T> {
 }
 
 impl TumblrClient {
-    pub async fn request(
-        &mut self,
-        request: TumblrRequest,
-    ) -> Result<String, Box<dyn std::error::Error>> {
+    pub async fn request(&mut self, request: TumblrRequest) -> DynResult<String> {
         // Refresh token if expired
         self.refresh_if_expired().await?;
 
-        let mut builder = match request.method {
-            HttpMethod::Get => self.request_client.get(request.url),
-            HttpMethod::Post => self.request_client.post(request.url),
-            HttpMethod::Delete => self.request_client.delete(request.url),
-        };
+        let mut builder = self
+            .request_client
+            .request(request.method.into(), request.url);
 
         if let Some(json) = request.json {
             builder = self.request_with_json(builder, json)
