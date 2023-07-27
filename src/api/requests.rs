@@ -1,6 +1,7 @@
-use std::collections::HashMap;
+use std::marker::PhantomData;
 
 use reqwest::{header::CONTENT_TYPE, RequestBuilder, Url};
+use serde::Deserialize;
 
 use super::TumblrClient;
 
@@ -35,8 +36,23 @@ pub struct TumblrRequest {
     pub json: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct TumblrResponseMeta {
+    pub status: u16,
+    pub msg: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TumblrResponse<T> {
+    meta: TumblrResponseMeta,
+    response: T,
+}
+
 impl TumblrClient {
-    pub async fn request(&mut self, request: TumblrRequest) -> DynResult<String> {
+    pub async fn request(
+        &mut self,
+        request: TumblrRequest,
+    ) -> Result<String, Box<dyn std::error::Error>> {
         // Refresh token if expired
         self.refresh_if_expired().await?;
 

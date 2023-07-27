@@ -1,19 +1,46 @@
+use reqwest::Url;
 use serde::Serialize;
 use serde_with_macros::skip_serializing_none;
+
+use crate::api::blog::BlogMention;
 
 #[derive(Debug, Serialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum Formatting {
     // Basic
-    Bold { start: u32, end: u32 },
-    Italic { start: u32, end: u32 },
-    Strikethrough { start: u32, end: u32 },
-    Small { start: u32, end: u32 },
+    Bold {
+        start: u32,
+        end: u32,
+    },
+    Italic {
+        start: u32,
+        end: u32,
+    },
+    Strikethrough {
+        start: u32,
+        end: u32,
+    },
+    Small {
+        start: u32,
+        end: u32,
+    },
 
     // Complex
-    Link { start: u32, end: u32, url: String },
-    Mention { start: u32, end: u32, blog: () },
-    Color { start: u32, end: u32, hex: String },
+    Link {
+        start: u32,
+        end: u32,
+        url: Url,
+    },
+    Mention {
+        start: u32,
+        end: u32,
+        blog: BlogMention,
+    },
+    Color {
+        start: u32,
+        end: u32,
+        hex: String,
+    },
 }
 
 /// https://www.tumblr.com/docs/npf#text-block-basic-subtypes

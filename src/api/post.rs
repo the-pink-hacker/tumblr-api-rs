@@ -6,7 +6,10 @@ use serde_with_macros::skip_serializing_none;
 
 pub use self::content::*;
 
-use super::requests::{AuthenticationLevel, HttpMethod, TumblrRequest};
+use super::{
+    blog::TumblrBlogId,
+    requests::{AuthenticationLevel, HttpMethod, TumblrRequest},
+};
 
 /// https://www.tumblr.com/docs/en/api/v2#note-about-post-states
 #[derive(Debug, Default, Serialize)]
@@ -42,7 +45,7 @@ pub struct Post {
     pub publish_on: Option<String>,
     pub date: Option<String>,
     pub tags: Option<String>,
-    pub source_url: Option<String>,
+    pub source_url: Option<Url>,
     pub send_to_twitter: Option<bool>,
     pub is_private: Option<bool>,
     pub slug: Option<String>,
@@ -51,7 +54,7 @@ pub struct Post {
 
 #[derive(Debug)]
 pub struct PostCreateRequest {
-    pub blog_identifier: String,
+    pub blog_id: TumblrBlogId,
     pub parameters: Post,
 }
 
@@ -63,7 +66,7 @@ impl TryFrom<PostCreateRequest> for TumblrRequest {
             method: HttpMethod::Post,
             url: Url::parse(&format!(
                 "https://api.tumblr.com/v2/blog/{}/posts",
-                value.blog_identifier
+                value.blog_id.to_string()
             ))?,
             level: AuthenticationLevel::OAuth,
             json: Some(serde_json::to_string(&value.parameters)?),
