@@ -1,5 +1,3 @@
-use std::marker::PhantomData;
-
 use reqwest::{header::CONTENT_TYPE, RequestBuilder, Url};
 use serde::Deserialize;
 
@@ -54,8 +52,8 @@ pub struct TumblrResponseMeta {
 
 #[derive(Debug, Deserialize)]
 pub struct TumblrResponse<T> {
-    meta: TumblrResponseMeta,
-    response: T,
+    pub meta: TumblrResponseMeta,
+    pub response: T,
 }
 
 impl TumblrClient {
