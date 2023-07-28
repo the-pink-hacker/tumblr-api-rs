@@ -1,5 +1,5 @@
 use reqwest::{header::CONTENT_TYPE, RequestBuilder, Url};
-use serde::Deserialize;
+use serde::{de::DeserializeOwned, Deserialize};
 
 use super::TumblrClient;
 
@@ -56,8 +56,13 @@ pub struct TumblrResponse<T> {
     pub response: T,
 }
 
+pub type TumblrResponseEmpty = TumblrResponse<()>;
+
 impl TumblrClient {
-    pub async fn request(&mut self, request: TumblrRequest) -> DynResult<String> {
+    pub async fn request<T>(&mut self, request: TumblrRequest) -> DynResult<T>
+    where
+        T: DeserializeOwned,
+    {
         // Refresh token if expired
         self.refresh_if_expired().await?;
 
@@ -75,7 +80,8 @@ impl TumblrClient {
             AuthenticationLevel::OAuth => self.request_with_oauth(builder),
         };
 
-        Ok(builder.send().await?.text().await?)
+        let response = builder.send().await?.text().await?;
+        Ok(serde_json::from_str(&response)?)
     }
 
     fn request_with_json(&self, builder: RequestBuilder, json: String) -> RequestBuilder {

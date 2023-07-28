@@ -20,11 +20,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let blog_id = TumblrBlogId::BlogName("the-pink-hacker".to_string());
 
     let response = tumblr_client
-        .request(BlogInfoRequest { blog_id }.try_into()?)
+        .request::<TumblrResponse<BlogInfoResponse>>(BlogInfoRequest { blog_id }.try_into()?)
         .await?;
-    let response = serde_json::from_str::<TumblrResponse<BlogInfoResponse>>(&response)?;
-    let response = serde_json::to_string_pretty(&response.response.blog)?;
-    println!("Response: {}", response);
+    println!("Response: {:?}", response);
     tumblr_client.save_to_file(CLIENT_CACHE_PATH.into())?;
     Ok(())
 }

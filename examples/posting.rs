@@ -1,7 +1,8 @@
 use tumblr_api::{
     auth::read_credentials,
     blog::TumblrBlogId,
-    post::{Formatting, Post, PostContent, PostCreateRequest, PostState},
+    post::{Formatting, Post, PostContent, PostCreateRequest, PostCreateResponse, PostState},
+    requests::TumblrResponse,
     TumblrClient,
 };
 
@@ -158,7 +159,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let blog_id = TumblrBlogId::BlogName("the-pink-hacker".to_string());
 
     let response = tumblr_client
-        .request(
+        .request::<TumblrResponse<PostCreateResponse>>(
             PostCreateRequest {
                 blog_id,
                 parameters: post,
@@ -166,7 +167,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .try_into()?,
         )
         .await?;
-    println!("Response: {}", response);
+    println!("Response: {:?}", response);
     tumblr_client.save_to_file(CLIENT_CACHE_PATH.into())?;
     Ok(())
 }

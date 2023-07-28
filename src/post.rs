@@ -1,7 +1,7 @@
 mod content;
 
 use reqwest::Url;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
 
 pub use self::content::*;
@@ -72,4 +72,9 @@ impl TryFrom<PostCreateRequest> for TumblrRequest {
             json: Some(serde_json::to_string(&value.parameters)?),
         })
     }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PostCreateResponse {
+    id: String,
 }
