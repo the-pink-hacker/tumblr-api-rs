@@ -77,7 +77,7 @@ pub struct PostGet {
     pub post_type: String,
     pub id: u64,
     pub tumblelog_uuid: String,
-    pub parent_post_id: Option<u64>,
+    pub parent_post_id: Option<String>,
     pub parent_tumblelog_uuid: Option<String>,
     pub reblog_key: String,
     pub trail: Vec<()>,
