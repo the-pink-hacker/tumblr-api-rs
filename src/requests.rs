@@ -4,7 +4,6 @@ use serde::{de::DeserializeOwned, Deserialize};
 
 use super::TumblrClient;
 
-const TUMBLR_API_URL: &str = "https://api.tumblr.com";
 const JSON_HEADER_VALUE: &str = "application/json";
 const API_KEY_HEADER_KEY: &str = "api_key";
 
@@ -33,11 +32,10 @@ impl TumblrRequestBuilder {
     pub fn new(
         request_client: &Client,
         method: HttpMethod,
-        path: String,
+        url: Url,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         Ok(Self {
-            builder: request_client
-                .request(method.into(), Url::parse(TUMBLR_API_URL)?.join(&path)?),
+            builder: request_client.request(method.into(), url),
         })
     }
 
@@ -95,7 +93,7 @@ impl TumblrClient {
         R: TumblrRequest,
     {
         // Refresh token if expired
-        self.refresh_if_expired().await?;
+        self.refresh_token_if_expired().await?;
 
         let response_raw = self
             .request_client

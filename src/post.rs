@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
 
 use crate::{
+    paths,
     requests::{HttpMethod, TumblrRequest, TumblrRequestBuilder, TumblrResponse},
     TumblrClient,
 };
@@ -70,7 +71,7 @@ impl TumblrRequest for PostCreateRequest {
         Ok(TumblrRequestBuilder::new(
             &client.request_client,
             HttpMethod::Post,
-            format!("v2/blog/{}/posts", self.blog_id.clone().to_string()),
+            paths::blog_post_create(self.blog_id.clone().to_string())?,
         )?
         .auth_by_oauth(client.get_access_token())
         .json(serde_json::to_string(&self.parameters)?)

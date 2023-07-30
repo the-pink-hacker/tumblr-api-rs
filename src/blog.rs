@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
 
 use crate::{
+    paths,
     requests::{TumblrRequestBuilder, TumblrResponse},
     TumblrClient,
 };
@@ -57,7 +58,7 @@ impl TumblrRequest for BlogInfoRequest {
         Ok(TumblrRequestBuilder::new(
             &client.request_client,
             HttpMethod::Get,
-            format!("v2/blog/{}/info", self.blog_id.clone().to_string()),
+            paths::blog_info(self.blog_id.clone().to_string())?,
         )?
         .auth_by_key(client.get_api_key())
         .build()?)

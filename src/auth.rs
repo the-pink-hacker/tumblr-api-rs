@@ -228,7 +228,7 @@ impl TumblrClientTokens {
         self.refresh_at <= Utc::now()
     }
 
-    async fn refresh_if_expired(&mut self, client: &OauthClient) -> Result<()> {
+    async fn refresh_token_if_expired(&mut self, client: &OauthClient) -> Result<()> {
         if self.needs_refresh() {
             println!("Refreshing token.");
             self.refresh_token(client).await
@@ -306,8 +306,12 @@ impl TumblrClient {
         self.token.save_to_file(path)
     }
 
-    pub async fn refresh_if_expired(&mut self) -> Result<()> {
-        self.token.refresh_if_expired(&self.client).await
+    pub async fn refresh_token(&mut self) -> Result<()> {
+        self.token.refresh_token(&self.client).await
+    }
+
+    pub async fn refresh_token_if_expired(&mut self) -> Result<()> {
+        self.token.refresh_token_if_expired(&self.client).await
     }
 
     pub fn get_api_key(&self) -> &ClientId {
