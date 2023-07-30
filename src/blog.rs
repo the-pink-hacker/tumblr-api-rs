@@ -3,11 +3,7 @@ use reqwest::{Request, Url};
 use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
 
-use crate::{
-    paths,
-    requests::{TumblrRequestBuilder, TumblrResponse},
-    TumblrClient,
-};
+use crate::{paths, requests::TumblrRequestBuilder, TumblrClient};
 
 use super::requests::{HttpMethod, TumblrRequest};
 
@@ -16,14 +12,14 @@ pub struct TumblrUuid(String);
 
 /// For Post creation, only the UUID field is required.
 #[skip_serializing_none]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct BlogMention {
     uuid: TumblrUuid,
     name: Option<String>,
     url: Option<Url>,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum TumblrBlogId {
     Uuid(TumblrUuid),
     Hostname(String),
@@ -52,7 +48,7 @@ pub struct BlogInfoRequest {
 }
 
 impl TumblrRequest for BlogInfoRequest {
-    type Response = TumblrResponse<BlogInfoResponse>;
+    type Response = BlogInfoResponse;
 
     fn build_request(&self, client: &TumblrClient) -> Result<Request, Box<dyn std::error::Error>> {
         Ok(TumblrRequestBuilder::new(
@@ -62,10 +58,6 @@ impl TumblrRequest for BlogInfoRequest {
         )?
         .auth_by_key(client.get_api_key())
         .build()?)
-    }
-
-    fn deserialize_response(self, response_raw: &str) -> Result<Self::Response, serde_json::Error> {
-        serde_json::from_str(response_raw)
     }
 }
 

@@ -74,21 +74,24 @@ pub struct TumblrResponse<T> {
     pub response: T,
 }
 
-pub type TumblrResponseEmpty = TumblrResponse<()>;
-
-pub trait TumblrRequest {
+pub trait TumblrRequest: Sized {
     type Response: DeserializeOwned;
 
     fn build_request(&self, client: &TumblrClient) -> Result<Request, Box<dyn std::error::Error>>;
 
-    fn deserialize_response(self, response_raw: &str) -> Result<Self::Response, serde_json::Error>;
+    fn deserialize_response(
+        self,
+        response_raw: &str,
+    ) -> Result<TumblrResponse<Self::Response>, serde_json::Error> {
+        serde_json::from_str(response_raw)
+    }
 }
 
 impl TumblrClient {
     pub async fn send_request<R>(
         &mut self,
         request: R,
-    ) -> Result<<R>::Response, Box<dyn std::error::Error>>
+    ) -> Result<TumblrResponse<<R>::Response>, Box<dyn std::error::Error>>
     where
         R: TumblrRequest,
     {

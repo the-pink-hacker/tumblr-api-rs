@@ -1,8 +1,4 @@
-use tumblr_api::{
-    auth::read_credentials,
-    blog::{BlogInfoRequest, TumblrBlogId},
-    TumblrClient,
-};
+use tumblr_api::{auth::read_credentials, blog::TumblrBlogId, post::PostGetRequest, TumblrClient};
 
 const CLIENT_CACHE_PATH: &str = "client.json";
 
@@ -17,10 +13,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .await?;
     tumblr_client.save_to_file(CLIENT_CACHE_PATH.into())?;
 
-    let blog_id = TumblrBlogId::BlogName("the-pink-hacker".to_string());
-
     let response = tumblr_client
-        .send_request(BlogInfoRequest { blog_id })
+        .send_request(PostGetRequest {
+            blog_id: TumblrBlogId::BlogName("the-pink-hacker".to_string()),
+            post_id: "723898766239924224".to_string(),
+        })
         .await?;
     println!("Response: {:#?}", response);
     tumblr_client.save_to_file(CLIENT_CACHE_PATH.into())?;

@@ -1,10 +1,10 @@
 use reqwest::Url;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
 
 use crate::blog::BlogMention;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum Formatting {
     // Basic
@@ -44,7 +44,7 @@ pub enum Formatting {
 }
 
 /// https://www.tumblr.com/docs/npf#text-block-basic-subtypes
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ContentSubtype {
     #[serde(rename = "heading1")]
@@ -60,7 +60,7 @@ pub enum ContentSubtype {
 }
 
 #[skip_serializing_none]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum PostContent {
     Text {

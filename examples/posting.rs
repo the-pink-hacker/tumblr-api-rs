@@ -1,7 +1,7 @@
 use tumblr_api::{
     auth::read_credentials,
     blog::TumblrBlogId,
-    post::{Formatting, Post, PostContent, PostCreateRequest, PostState, ReblogInfo},
+    post::{Formatting, PostContent, PostCreate, PostCreateRequest, PostState},
     TumblrClient,
 };
 
@@ -9,7 +9,7 @@ const CLIENT_CACHE_PATH: &str = "client.json";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let post = Post {
+    let post = PostCreate {
         content: vec![PostContent::Text {
             text: "hello there".to_string(),
             subtype: None,

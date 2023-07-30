@@ -6,7 +6,7 @@ use serde_with::skip_serializing_none;
 
 use crate::{
     paths,
-    requests::{HttpMethod, TumblrRequest, TumblrRequestBuilder, TumblrResponse},
+    requests::{HttpMethod, TumblrRequest, TumblrRequestBuilder},
     TumblrClient,
 };
 
@@ -26,7 +26,7 @@ pub enum PostState {
     Unapproved,
 }
 
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ReblogInteractability {
     #[default]
@@ -36,7 +36,7 @@ pub enum ReblogInteractability {
     NoOne,
 }
 
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct PostLayout(());
 
 #[skip_serializing_none]
@@ -54,7 +54,7 @@ pub struct ReblogInfo {
 /// https://www.tumblr.com/docs/npf
 #[skip_serializing_none]
 #[derive(Debug, Default, Serialize)]
-pub struct Post {
+pub struct PostCreate {
     pub content: Vec<PostContent>,
     pub layout: Option<Vec<PostLayout>>,
     pub state: Option<PostState>,
@@ -70,14 +70,33 @@ pub struct Post {
     pub reblog_info: Option<ReblogInfo>,
 }
 
+#[derive(Debug, Default, Deserialize)]
+pub struct PostGet {
+    pub object_type: String,
+    #[serde(rename = "type")]
+    pub post_type: String,
+    pub id: u64,
+    pub tumblelog_uuid: String,
+    pub parent_post_id: Option<String>,
+    pub parent_tumblelog_uuid: Option<String>,
+    pub reblog_key: String,
+    pub trail: Vec<()>,
+    pub content: Vec<PostContent>,
+    pub layout: Vec<PostLayout>,
+    pub queued_state: Option<()>,
+    pub scheduled_publish_time: Option<()>,
+    pub publish_on: Option<()>,
+    pub interactability_reblog: ReblogInteractability,
+}
+
 #[derive(Debug)]
 pub struct PostCreateRequest {
     pub blog_id: TumblrBlogId,
-    pub parameters: Post,
+    pub parameters: PostCreate,
 }
 
 impl TumblrRequest for PostCreateRequest {
-    type Response = TumblrResponse<PostCreateResponse>;
+    type Response = PostCreateResponse;
 
     fn build_request(
         &self,
@@ -92,13 +111,38 @@ impl TumblrRequest for PostCreateRequest {
         .json(serde_json::to_string(&self.parameters)?)
         .build()?)
     }
-
-    fn deserialize_response(self, response_raw: &str) -> Result<Self::Response, serde_json::Error> {
-        serde_json::from_str(response_raw)
-    }
 }
 
 #[derive(Debug, Deserialize)]
 pub struct PostCreateResponse {
-    id: String,
+    pub id: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PostGetRequest {
+    pub blog_id: TumblrBlogId,
+    pub post_id: String,
+}
+
+impl TumblrRequest for PostGetRequest {
+    type Response = PostGetResponse;
+
+    fn build_request(
+        &self,
+        client: &TumblrClient,
+    ) -> Result<reqwest::Request, Box<dyn std::error::Error>> {
+        Ok(TumblrRequestBuilder::new(
+            &client.request_client,
+            HttpMethod::Get,
+            paths::blog_post(self.blog_id.clone().to_string(), self.post_id.clone())?,
+        )?
+        .auth_by_oauth(client.get_access_token())
+        .build()?)
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PostGetResponse {
+    #[serde(flatten)]
+    pub parameters: PostGet,
 }
