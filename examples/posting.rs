@@ -1,7 +1,7 @@
 use tumblr_api::{
     auth::read_credentials,
     blog::TumblrBlogId,
-    post::{Formatting, Post, PostContent, PostCreateRequest, PostState},
+    post::{Formatting, Post, PostContent, PostCreateRequest, PostState, ReblogInfo},
     TumblrClient,
 };
 
@@ -25,6 +25,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
     println!("Post: {}", serde_json::to_string_pretty(&post)?);
+
     let credentials = read_credentials()?;
     let mut tumblr_client = TumblrClient::try_from_file_or_authorize(
         CLIENT_CACHE_PATH.into(),

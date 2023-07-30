@@ -11,6 +11,15 @@ macro_rules! paths {
             }
         )*
     };
+    (
+        $($(#[$attr:meta])* $name: ident $path: literal $($argument: ident)*),*
+        $(,)?
+    ) => {
+        paths!(
+            path_prefix: ""
+            $($(#[$attr])* $name $path $($argument)*),*
+        );
+    };
 }
 
 paths!(
@@ -387,8 +396,6 @@ paths!(
 );
 
 paths!(
-    path_prefix: ""
-
     /// # Get Posts with Tag
     ///
     /// Docs: https://www.tumblr.com/docs/en/api/v2#tagged--get-posts-with-tag
