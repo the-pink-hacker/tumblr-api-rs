@@ -43,7 +43,7 @@ pub struct PostLayout(());
 #[derive(Debug, Default, Serialize)]
 pub struct ReblogInfo {
     pub parent_tumblelog_uuid: String,
-    pub parent_post_id: u32,
+    pub parent_post_id: u64,
     pub reblog_key: String,
     pub hide_trail: Option<bool>,
     pub exclude_trail_items: Option<Vec<u16>>,
