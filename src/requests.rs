@@ -1,23 +1,12 @@
-use reqwest::{header::CONTENT_TYPE, RequestBuilder, Url};
+use oauth2::{AccessToken, ClientId};
+use reqwest::{header::CONTENT_TYPE, Client, Request, RequestBuilder, Url};
 use serde::{de::DeserializeOwned, Deserialize};
 
 use super::TumblrClient;
 
-type DynResult<T> = Result<T, Box<dyn std::error::Error>>;
-
-/// The API uses three different levels of authentication, depending on the method.
-///
-/// `None`: No authentication. Anybody can query the method.
-///
-/// `API key`: Requires an API key. Use your OAuth Consumer Key as your api_key.
-///
-/// `OAuth`: Requires a signed request that meets the OAuth 1.0a Protocol.
-#[derive(Debug)]
-pub enum AuthenticationLevel {
-    None,
-    Key,
-    OAuth,
-}
+const TUMBLR_API_URL: &str = "https://api.tumblr.com";
+const JSON_HEADER_VALUE: &str = "application/json";
+const API_KEY_HEADER_KEY: &str = "api_key";
 
 #[derive(Debug)]
 pub enum HttpMethod {
@@ -36,12 +25,43 @@ impl From<HttpMethod> for reqwest::Method {
     }
 }
 
-#[derive(Debug)]
-pub struct TumblrRequest {
-    pub method: HttpMethod,
-    pub url: Url,
-    pub level: AuthenticationLevel,
-    pub json: Option<String>,
+pub struct TumblrRequestBuilder {
+    builder: RequestBuilder,
+}
+
+impl TumblrRequestBuilder {
+    pub fn new(
+        request_client: &Client,
+        method: HttpMethod,
+        path: String,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        Ok(Self {
+            builder: request_client
+                .request(method.into(), Url::parse(TUMBLR_API_URL)?.join(&path)?),
+        })
+    }
+
+    pub fn json(mut self, json: String) -> Self {
+        self.builder = self
+            .builder
+            .header(CONTENT_TYPE, JSON_HEADER_VALUE)
+            .body(json);
+        self
+    }
+
+    pub fn auth_by_key(mut self, key: &ClientId) -> Self {
+        self.builder = self.builder.query(&[(API_KEY_HEADER_KEY, key)]);
+        self
+    }
+
+    pub fn auth_by_oauth(mut self, token: &AccessToken) -> Self {
+        self.builder = self.builder.bearer_auth(token.secret());
+        self
+    }
+
+    pub fn build(self) -> Result<Request, reqwest::Error> {
+        self.builder.build()
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -58,41 +78,32 @@ pub struct TumblrResponse<T> {
 
 pub type TumblrResponseEmpty = TumblrResponse<()>;
 
+pub trait TumblrRequest {
+    type Response: DeserializeOwned;
+
+    fn build_request(&self, client: &TumblrClient) -> Result<Request, Box<dyn std::error::Error>>;
+
+    fn deserialize_response(self, response_raw: &str) -> Result<Self::Response, serde_json::Error>;
+}
+
 impl TumblrClient {
-    pub async fn request<T>(&mut self, request: TumblrRequest) -> DynResult<T>
+    pub async fn send_request<R>(
+        &mut self,
+        request: R,
+    ) -> Result<<R>::Response, Box<dyn std::error::Error>>
     where
-        T: DeserializeOwned,
+        R: TumblrRequest,
     {
         // Refresh token if expired
         self.refresh_if_expired().await?;
 
-        let mut builder = self
+        let response_raw = self
             .request_client
-            .request(request.method.into(), request.url);
+            .execute(request.build_request(self)?)
+            .await?
+            .text()
+            .await?;
 
-        if let Some(json) = request.json {
-            builder = self.request_with_json(builder, json)
-        }
-
-        builder = match request.level {
-            AuthenticationLevel::None => builder,
-            AuthenticationLevel::Key => self.request_with_key(builder),
-            AuthenticationLevel::OAuth => self.request_with_oauth(builder),
-        };
-
-        let response = builder.send().await?.text().await?;
-        Ok(serde_json::from_str(&response)?)
-    }
-
-    fn request_with_json(&self, builder: RequestBuilder, json: String) -> RequestBuilder {
-        builder.header(CONTENT_TYPE, "application/json").body(json)
-    }
-
-    fn request_with_key(&self, builder: RequestBuilder) -> RequestBuilder {
-        builder.query(&[("api_key", self.get_api_key())])
-    }
-
-    fn request_with_oauth(&self, builder: RequestBuilder) -> RequestBuilder {
-        builder.bearer_auth(self.get_access_token().secret())
+        Ok(request.deserialize_response(&response_raw)?)
     }
 }
