@@ -20,7 +20,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let blog_id = TumblrBlogId::BlogName("the-pink-hacker".to_string());
 
     let response = tumblr_client
-        .send_request(BlogInfoRequest { blog_id })
+        .send_request(&BlogInfoRequest { blog_id })
         .await?;
     println!("Response: {:#?}", response);
     tumblr_client.save_to_file(CLIENT_CACHE_PATH.into())?;

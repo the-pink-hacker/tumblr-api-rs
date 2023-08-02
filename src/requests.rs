@@ -80,7 +80,7 @@ pub trait TumblrRequest: Sized {
     fn build_request(&self, client: &TumblrClient) -> Result<Request, Box<dyn std::error::Error>>;
 
     fn deserialize_response(
-        self,
+        &self,
         response_raw: &str,
     ) -> Result<TumblrResponse<Self::Response>, serde_json::Error> {
         serde_json::from_str(response_raw)
@@ -90,21 +90,30 @@ pub trait TumblrRequest: Sized {
 impl TumblrClient {
     pub async fn send_request<R>(
         &mut self,
-        request: R,
+        request: &R,
     ) -> Result<TumblrResponse<<R>::Response>, Box<dyn std::error::Error>>
+    where
+        R: TumblrRequest,
+    {
+        let response_raw = self.send_request_raw(request).await?;
+        Ok(request.deserialize_response(&response_raw)?)
+    }
+
+    pub async fn send_request_raw<R>(
+        &mut self,
+        request: &R,
+    ) -> Result<String, Box<dyn std::error::Error>>
     where
         R: TumblrRequest,
     {
         // Refresh token if expired
         self.refresh_token_if_expired().await?;
 
-        let response_raw = self
+        Ok(self
             .request_client
             .execute(request.build_request(self)?)
             .await?
             .text()
-            .await?;
-
-        Ok(request.deserialize_response(&response_raw)?)
+            .await?)
     }
 }

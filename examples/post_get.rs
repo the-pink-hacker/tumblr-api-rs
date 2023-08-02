@@ -14,7 +14,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tumblr_client.save_to_file(CLIENT_CACHE_PATH.into())?;
 
     let response = tumblr_client
-        .send_request(PostGetRequest {
+        .send_request(&PostGetRequest {
             blog_id: TumblrBlogId::BlogName("the-pink-hacker".to_string()),
             post_id: "723898766239924224".to_string(),
         })
