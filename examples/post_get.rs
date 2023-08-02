@@ -16,7 +16,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let response = tumblr_client
         .send_request(&PostGetRequest {
             blog_id: TumblrBlogId::BlogName("the-pink-hacker".to_string()),
-            post_id: "723898766239924224".to_string(),
+            post_id: "724420450593144832".to_string(),
         })
         .await?;
     println!("Response: {:#?}", response);

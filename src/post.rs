@@ -15,7 +15,7 @@ pub use self::content::*;
 use super::blog::TumblrBlogId;
 
 /// https://www.tumblr.com/docs/en/api/v2#note-about-post-states
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum PostState {
     #[default]
@@ -28,7 +28,7 @@ pub enum PostState {
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub enum ReblogInteractability {
+pub enum PostInteractability {
     #[default]
     Everyone,
     // "noone" is not a word, tumblr!
@@ -65,12 +65,12 @@ pub struct PostCreate {
     pub send_to_twitter: Option<bool>,
     pub is_private: Option<bool>,
     pub slug: Option<String>,
-    pub interactability_reblog: Option<ReblogInteractability>,
+    pub interactability_reblog: Option<PostInteractability>,
     #[serde(flatten)]
     pub reblog_info: Option<ReblogInfo>,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct PostGet {
     pub object_type: String,
     #[serde(rename = "type")]
@@ -80,13 +80,55 @@ pub struct PostGet {
     pub parent_post_id: Option<String>,
     pub parent_tumblelog_uuid: Option<String>,
     pub reblog_key: String,
-    pub trail: Vec<()>,
+    pub original_type: String,
+    pub is_blocks_post_format: bool,
+    pub blog_name: String,
+    pub id_string: String,
+    pub is_blazed: bool,
+    pub is_blaze_pending: bool,
+    pub can_ignite: bool,
+    pub can_blaze: bool,
+    pub post_url: Url,
+    pub slug: String,
+    pub date: String,
+    pub timestamp: u32,
+    pub state: PostState,
+    pub tags: Vec<String>,
+    pub short_url: Url,
+    pub summary: String,
+    pub should_open_in_legacy: bool,
+    // recommended_source
+    // recommended_color
+    pub followed: bool,
+    pub liked: bool,
+    pub note_count: u32,
     pub content: Vec<PostContent>,
     pub layout: Vec<PostLayout>,
-    pub queued_state: Option<()>,
-    pub scheduled_publish_time: Option<()>,
-    pub publish_on: Option<()>,
-    pub interactability_reblog: ReblogInteractability,
+    pub trail: Vec<PostTrail>,
+    //pub queued_state: Option<()>,
+    //pub scheduled_publish_time: Option<()>,
+    //pub publish_on: Option<()>,
+    pub can_like: bool,
+    pub interactability_reblog: PostInteractability,
+    pub interactability_blaze: PostInteractability,
+    pub can_reblog: bool,
+    pub can_send_in_message: bool,
+    pub muted: bool,
+    pub mute_end_timestamp: u32,
+    pub can_mute: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PostTrail {
+    // blog
+    pub content: Vec<PostContent>,
+    pub layout: Vec<PostLayout>,
+    pub post: PostTrailId,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PostTrailId {
+    pub id: String,
 }
 
 #[derive(Debug)]
