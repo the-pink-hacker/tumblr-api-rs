@@ -2,7 +2,7 @@ use tumblr_api::{
     auth::read_credentials,
     blog::TumblrBlogId,
     post::{Formatting, PostContent, PostCreate, PostCreateRequest, PostState},
-    TumblrClient,
+    tags, TumblrClient,
 };
 
 const CLIENT_CACHE_PATH: &str = "client.json";
@@ -21,7 +21,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }]),
         }],
         state: Some(PostState::Draft),
-        tags: Some("tumblr api,api,the pink hacker,tumblr api shenanigans".to_string()),
+        tags: Some(
+            tags!(
+                "tumblr api",
+                "api",
+                "the pink hacker",
+                "tumblr api shenanigans"
+            )
+            .to_string(),
+        ),
         ..Default::default()
     };
     println!("Post: {}", serde_json::to_string_pretty(&post)?);
