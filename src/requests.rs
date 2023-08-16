@@ -1,3 +1,6 @@
+pub mod blog;
+pub mod paths;
+
 use oauth2::{AccessToken, ClientId};
 use reqwest::{header::CONTENT_TYPE, Client, Request, RequestBuilder, Url};
 use serde::{de::DeserializeOwned, Deserialize};

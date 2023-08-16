@@ -1,7 +1,5 @@
 use tumblr_api::{
-    auth::read_credentials,
-    blog::{BlogInfoRequest, TumblrBlogId},
-    TumblrClient,
+    auth::read_credentials, blog::TumblrBlogId, requests::blog::blog::BlogInfoRequest, TumblrClient,
 };
 
 const CLIENT_CACHE_PATH: &str = "client.json";

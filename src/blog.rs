@@ -1,11 +1,7 @@
 use chrono::{serde::ts_seconds, DateTime, Utc};
-use reqwest::{Request, Url};
+use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
-
-use crate::{paths, requests::TumblrRequestBuilder, TumblrClient};
-
-use super::requests::{HttpMethod, TumblrRequest};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TumblrUuid(String);
@@ -39,25 +35,6 @@ impl TumblrBlogId {
 impl From<TumblrBlogId> for String {
     fn from(value: TumblrBlogId) -> Self {
         value.to_string()
-    }
-}
-
-#[derive(Debug)]
-pub struct BlogInfoRequest {
-    pub blog_id: TumblrBlogId,
-}
-
-impl TumblrRequest for BlogInfoRequest {
-    type Response = BlogInfoResponse;
-
-    fn build_request(&self, client: &TumblrClient) -> Result<Request, Box<dyn std::error::Error>> {
-        Ok(TumblrRequestBuilder::new(
-            &client.request_client,
-            HttpMethod::Get,
-            paths::blog_info(self.blog_id.clone().to_string())?,
-        )?
-        .auth_by_key(client.get_api_key())
-        .build()?)
     }
 }
 
@@ -119,9 +96,4 @@ pub struct TumblrBlog {
     pub updated: DateTime<Utc>,
     pub url: Url,
     pub uuid: TumblrUuid,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct BlogInfoResponse {
-    pub blog: TumblrBlog,
 }

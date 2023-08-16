@@ -1,7 +1,8 @@
 use tumblr_api::{
     auth::read_credentials,
     blog::TumblrBlogId,
-    post::{Formatting, PostContent, PostCreate, PostCreateRequest, PostState},
+    post::{Formatting, PostContent, PostCreate, PostState},
+    requests::blog::posts::PostCreateRequest,
     tags, TumblrClient,
 };
 

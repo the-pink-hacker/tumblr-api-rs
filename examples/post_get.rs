@@ -1,4 +1,6 @@
-use tumblr_api::{auth::read_credentials, blog::TumblrBlogId, post::PostGetRequest, TumblrClient};
+use tumblr_api::{
+    auth::read_credentials, blog::TumblrBlogId, requests::blog::posts::PostGetRequest, TumblrClient,
+};
 
 const CLIENT_CACHE_PATH: &str = "client.json";
 
